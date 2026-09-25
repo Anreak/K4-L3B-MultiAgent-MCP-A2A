@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import pytest
 
 from student_agent.contracts import Contracts
 from student_agent.policy_engine import PolicyEngine
@@ -92,7 +91,9 @@ def test_policy_engine_and_verifier_lifecycle(tmp_path: Path) -> None:
     assert len(verified["financial_resolution"]["refund_lines"]) == 1
 
     # Check trace verification event
-    trace_events = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").strip().split("\n")]
+    trace_events = [
+        json.loads(line) for line in trace_path.read_text(encoding="utf-8").strip().split("\n")
+    ]
     assert len(trace_events) == 1
     assert trace_events[0]["event_type"] == "verification_completed"
     assert trace_events[0]["actor"] == "verifier"

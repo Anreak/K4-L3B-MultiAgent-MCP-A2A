@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
+from .arbitrator import DisputeArbitratorAgent
 from .mcp_gateway import EvidenceGateway
-from .policy_engine import PolicyEngine
 from .specialists import (
     CaseGateway,
     EntityAgent,
@@ -21,7 +20,7 @@ async def solve_case(
     case: dict[str, Any], gateway: EvidenceGateway, trace: TraceWriter
 ) -> dict[str, Any]:
     """Execute the multi-agent investigation workflow for one dispute case.
-    
+
     Workflow lifecycle:
     1. Coordinator assigns entity resolution task.
     2. EntityAgent queries customer history, resolves candidates, and hands off to Coordinator.
@@ -76,7 +75,7 @@ async def solve_case(
 
     primary_claim_topic = claims[0]["topic"] if claims else "unsupported_claim"
 
-    # 2. Specialist Investigation phase (Domain-targeted to optimize efficiency & evidence relevance)
+    # 2. Specialist Investigation phase (Domain-targeted for efficiency)
     trace.emit(
         case_id=case_id,
         event_type="task_assigned",
@@ -86,7 +85,11 @@ async def solve_case(
     )
 
     is_delivery = primary_claim_topic in ("late_delivery_seller", "late_delivery_logistics")
-    is_payment = primary_claim_topic in ("duplicate_charge", "payment_mismatch", "valid_split_payment")
+    is_payment = primary_claim_topic in (
+        "duplicate_charge",
+        "payment_mismatch",
+        "valid_split_payment",
+    )
     is_refund = primary_claim_topic in ("refund_pending", "refund_failed")
     is_order_status = primary_claim_topic in ("canceled_order_paid", "unavailable_order_paid")
 
@@ -101,7 +104,9 @@ async def solve_case(
     policy_rules = await policy_agent.get_policy_rules(policy_version=policy_version)
 
     has_ship = is_delivery or primary_claim_topic == "unsupported_claim"
-    has_pay = is_payment or is_refund or is_order_status or primary_claim_topic == "unsupported_claim"
+    has_pay = (
+        is_payment or is_refund or is_order_status or primary_claim_topic == "unsupported_claim"
+    )
 
     if has_ship:
         shipment_agent = ShipmentAgent(cgw)
@@ -136,8 +141,9 @@ async def solve_case(
         evidence_refs=cgw.evidence_refs[-1:],
     )
 
-    # 4. Dispute Arbitration & Synthesis phase
-    draft_output = PolicyEngine.arbitrate(
+    # 4. Dispute Arbitration & Synthesis phase (Model-Assisted with Deterministic Fallback)
+    arbitrator = DisputeArbitratorAgent()
+    draft_output = await arbitrator.arbitrate(
         case=case,
         entity_res=entity_res,
         order_res=order_res,

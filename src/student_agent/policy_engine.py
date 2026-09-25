@@ -173,12 +173,13 @@ class PolicyEngine:
         ][:10]
 
         # Calibrated Confidence
-        if data_conflicts or case_status == "needs_investigation":
-            confidence = 0.65
-        else:
-            confidence = 0.95
+        confidence = 0.65 if (data_conflicts or case_status == "needs_investigation") else 0.95
 
-        resolved_oid = entity_res["resolved_order_ids"][0] if entity_res.get("resolved_order_ids") else "unknown"
+        resolved_oid = (
+            entity_res["resolved_order_ids"][0]
+            if entity_res.get("resolved_order_ids")
+            else "unknown"
+        )
 
         output = {
             "schema_version": "day09-l3b-output-v2",

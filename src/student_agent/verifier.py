@@ -7,7 +7,7 @@ from .trace import TraceWriter
 
 
 class VerifierAgent:
-    """Specialist responsible for cross-field consistency verification and confidence calibration."""
+    """Specialist responsible for cross-field consistency verification."""
 
     def __init__(self, contracts: Contracts, trace: TraceWriter) -> None:
         self.contracts = contracts
@@ -27,26 +27,36 @@ class VerifierAgent:
         resolved = set(output["entity_resolution"]["resolved_order_ids"])
         rejected = set(output["entity_resolution"]["rejected_candidates"])
         if resolved & rejected:
-            raise ValueError(f"Entity resolution overlap: resolved {resolved} intersects rejected {rejected}")
+            raise ValueError(
+                f"Entity resolution overlap: resolved {resolved} intersects rejected {rejected}"
+            )
 
         # 4. Shipment seller delay consistency
         shipment_verdict = output["shipment_analysis"]["verdict"]
         late_sellers = output["shipment_analysis"]["late_seller_ids"]
         if shipment_verdict == "seller_delay" and not late_sellers:
-            raise ValueError("Inconsistent shipment analysis: verdict is seller_delay but late_seller_ids is empty")
+            raise ValueError(
+                "Shipment analysis error: verdict is seller_delay but late_seller_ids is empty"
+            )
         if shipment_verdict in ("on_time", "logistics_delay") and late_sellers:
-            raise ValueError(f"Inconsistent shipment analysis: verdict is {shipment_verdict} but late_seller_ids has values")
+            raise ValueError(
+                f"Shipment analysis error: verdict is {shipment_verdict} but has late_sellers"
+            )
 
         # 5. Financial resolution balance
         fin = output["financial_resolution"]
         rec_refund = fin["recommended_refund_brl"]
         lines_sum = round(sum(line["amount_brl"] for line in fin["refund_lines"]), 2)
         if round(rec_refund, 2) != lines_sum:
-            raise ValueError(f"Financial resolution inconsistency: recommended {rec_refund} != sum of lines {lines_sum}")
+            raise ValueError(
+                f"Financial mismatch: recommended {rec_refund} != lines sum {lines_sum}"
+            )
 
         case_status = output["assessment"]["case_status"]
         if case_status == "no_action" and (rec_refund != 0.0 or fin["refund_lines"]):
-            raise ValueError("Financial resolution inconsistency: case_status is no_action but refund is > 0")
+            raise ValueError(
+                "Financial resolution inconsistency: case_status is no_action but refund is > 0"
+            )
 
         # 6. Confidence Calibration check
         conf = output["assessment"]["confidence"]

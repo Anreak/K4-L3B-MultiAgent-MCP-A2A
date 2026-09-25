@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import Any
 
 from .mcp_gateway import EvidenceGateway
@@ -9,7 +10,7 @@ from .trace import TraceWriter
 
 class CaseGateway:
     """Scoped gateway wrapper ensuring case_id integrity, in-memory caching, and trace auditing.
-    
+
     Principles strictly enforced:
     1. case_id is immutable per case instance.
     2. evidence_refs are preserved exactly as returned by MCP.
@@ -120,14 +121,20 @@ class EntityAgent:
         }
 
         for cand in candidate_order_ids:
-            if cand in known_orders or (claimed_order_id and cand == claimed_order_id and not cand.startswith("candidate-")):
+            if cand in known_orders or (
+                claimed_order_id and cand == claimed_order_id and not cand.startswith("candidate-")
+            ):
                 if cand not in resolved_order_ids:
                     resolved_order_ids.append(cand)
             else:
                 if cand not in rejected_candidates:
                     rejected_candidates.append(cand)
 
-        status = "resolved" if resolved_order_ids else ("ambiguous" if candidate_order_ids else "not_found")
+        status = (
+            "resolved"
+            if resolved_order_ids
+            else ("ambiguous" if candidate_order_ids else "not_found")
+        )
         confidence = 0.95 if status == "resolved" else 0.50
 
         return {
@@ -154,19 +161,25 @@ class OrderAgent:
         include_product_context: bool = True,
     ) -> dict[str, Any]:
         order_res = await self.gateway.call("get_order", actor="order-agent", order_id=order_id)
-        items_res = await self.gateway.call("get_order_items", actor="order-agent", order_id=order_id)
+        items_res = await self.gateway.call(
+            "get_order_items", actor="order-agent", order_id=order_id
+        )
 
         sellers_res = {}
         if include_sellers:
             try:
-                sellers_res = await self.gateway.call("get_sellers", actor="order-agent", order_id=order_id)
+                sellers_res = await self.gateway.call(
+                    "get_sellers", actor="order-agent", order_id=order_id
+                )
             except Exception:
                 sellers_res = {}
 
         products_res = {}
         if include_product_context:
             try:
-                products_res = await self.gateway.call("get_product_context", actor="order-agent", order_id=order_id)
+                products_res = await self.gateway.call(
+                    "get_product_context", actor="order-agent", order_id=order_id
+                )
             except Exception:
                 products_res = {}
 
@@ -234,10 +247,7 @@ class ShipmentAgent:
         elif has_logistics_delay_event:
             verdict = "logistics_delay"
         elif delivered_cust and estimated_delivery:
-            if delivered_cust > estimated_delivery:
-                verdict = "logistics_delay"
-            else:
-                verdict = "on_time"
+            verdict = "logistics_delay" if delivered_cust > estimated_delivery else "on_time"
         elif order_status in ("canceled", "unavailable"):
             verdict = "on_time"
         else:
@@ -265,11 +275,15 @@ class PaymentAgent:
         claim_topics = {c.get("topic") for c in claims}
         has_refund_claim = bool(claim_topics & {"refund_pending", "refund_failed"})
 
-        timeline_res = await self.gateway.call("get_payment_timeline", actor="payment-agent", order_id=order_id)
+        timeline_res = await self.gateway.call(
+            "get_payment_timeline", actor="payment-agent", order_id=order_id
+        )
         ref_res = None
         if has_refund_claim:
             try:
-                ref_res = await self.gateway.call("get_refund_timeline", actor="payment-agent", order_id=order_id)
+                ref_res = await self.gateway.call(
+                    "get_refund_timeline", actor="payment-agent", order_id=order_id
+                )
             except Exception:
                 ref_res = None
 
@@ -281,17 +295,13 @@ class PaymentAgent:
         events = payment_timeline_data.get("events", [])
         for ev in events:
             if ev.get("event_type") == "captured":
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     captured_total += float(ev.get("amount_brl", 0.0))
-                except (ValueError, TypeError):
-                    pass
 
         if captured_total == 0.0 and payments_data:
             for p in payments_data:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     captured_total += float(p.get("payment_value", 0.0))
-                except (ValueError, TypeError):
-                    pass
 
         refunded_total = 0.0
         has_pending_refund = False
@@ -331,7 +341,8 @@ class PaymentAgent:
 
         payment_references = list(
             dict.fromkeys(
-                f"pay_{p.get('payment_sequential', i+1)}_{i+1}_{p.get('payment_type', 'unknown')}"
+                f"pay_{p.get('payment_sequential', i + 1)}_{i + 1}_"
+                f"{p.get('payment_type', 'unknown')}"
                 for i, p in enumerate(payments_data)
             )
         )

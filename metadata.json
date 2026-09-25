@@ -1,0 +1,11 @@
+{
+  "model_name": "gemini-1.5-flash-8b",
+  "model_parameters": "< 10B",
+  "provider": "google-genai",
+  "alternative_models": [
+    "llama-3.1-8b-instant",
+    "qwen2.5:7b"
+  ],
+  "role": "dispute_arbitrator_and_conflict_resolver",
+  "scope": "Arbitrates complex dispute claims, reconciles customer assertion against authoritative MCP evidence, detects data conflicts, and calibrates confidence."
+}

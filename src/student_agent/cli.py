@@ -45,7 +45,9 @@ async def _run(root: Path) -> None:
 
     while case_idx < total_cases:
         try:
-            async with connect_gateway(settings.mcp_endpoint, settings.team_api_key, contracts) as gateway:
+            async with connect_gateway(
+                settings.mcp_endpoint, settings.team_api_key, contracts
+            ) as gateway:
                 discovered_tools = await gateway.list_tools()
                 if not discovered_tools:
                     raise RuntimeError("MCP Gateway returned no tools")
@@ -68,8 +70,9 @@ async def _run(root: Path) -> None:
                     case_idx += 1
         except Exception as exc:
             if case_idx < total_cases:
+                current_id = case_set.case_ids[case_idx]
                 print(
-                    f"Warning: Connection interrupted at case {case_set.case_ids[case_idx]} ({exc}). Reconnecting in 2s...",
+                    f"Warning: Disconnected at {current_id} ({exc}). Reconnecting...",
                     flush=True,
                 )
                 await asyncio.sleep(2.0)
@@ -97,8 +100,7 @@ def main() -> None:
         if args.command == "validate-inputs":
             case_set = load_case_set(root)
             print(
-                f"OK: {case_set.variant_id} / {case_set.version} / "
-                f"{len(case_set.case_ids)} cases"
+                f"OK: {case_set.variant_id} / {case_set.version} / {len(case_set.case_ids)} cases"
             )
         elif args.command == "mcp-tools":
             asyncio.run(_show_tools(root))
