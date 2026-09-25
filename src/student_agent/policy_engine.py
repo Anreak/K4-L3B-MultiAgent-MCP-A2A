@@ -130,7 +130,10 @@ class PolicyEngine:
         for claim in claims:
             cid = claim["claim_id"]
             topic = claim["topic"]
-            if topic == primary_issue:
+            if topic == "unsupported_claim":
+                verdict = "unsupported"
+                conf = 0.95
+            elif topic == primary_issue:
                 verdict = "supported"
                 conf = 0.95
             elif topic == "requested_full_refund":
@@ -162,8 +165,12 @@ class PolicyEngine:
                 }
             )
 
-        # Secondary Issues
-        secondary_issues = [c["topic"] for c in claims if c.get("topic") != primary_issue][:10]
+        # Secondary Issues (exclude requested_full_refund as it is a remedy claim)
+        secondary_issues = [
+            c["topic"]
+            for c in claims
+            if c.get("topic") != primary_issue and c.get("topic") != "requested_full_refund"
+        ][:10]
 
         # Calibrated Confidence
         if data_conflicts or case_status == "needs_investigation":

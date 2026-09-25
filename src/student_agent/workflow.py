@@ -74,31 +74,60 @@ async def solve_case(
         else (claimed_order_id or "unknown_order")
     )
 
-    # 2. Specialist Investigation phase
+    primary_claim_topic = claims[0]["topic"] if claims else "unsupported_claim"
+
+    # 2. Specialist Investigation phase (Domain-targeted to optimize efficiency & evidence relevance)
     trace.emit(
         case_id=case_id,
         event_type="task_assigned",
         actor="coordinator",
         target="specialist-agents",
-        attributes={"order_id": resolved_order_id},
+        attributes={"order_id": resolved_order_id, "claim_topic": primary_claim_topic},
     )
+
+    is_delivery = primary_claim_topic in ("late_delivery_seller", "late_delivery_logistics")
+    is_payment = primary_claim_topic in ("duplicate_charge", "payment_mismatch", "valid_split_payment")
+    is_refund = primary_claim_topic in ("refund_pending", "refund_failed")
+    is_order_status = primary_claim_topic in ("canceled_order_paid", "unavailable_order_paid")
 
     order_agent = OrderAgent(cgw)
-    shipment_agent = ShipmentAgent(cgw)
-    payment_agent = PaymentAgent(cgw)
     policy_agent = PolicyAgent(cgw)
 
-    order_res, ship_res, pay_res, policy_rules = await asyncio.gather(
-        order_agent.investigate(
-            order_id=resolved_order_id,
-            include_product_context=scope.get("include_product_context", True),
-        ),
-        shipment_agent.investigate(order_id=resolved_order_id),
-        payment_agent.investigate(order_id=resolved_order_id, claims=claims),
-        policy_agent.get_policy_rules(policy_version=policy_version),
+    order_res = await order_agent.investigate(
+        order_id=resolved_order_id,
+        include_sellers=(is_delivery or is_order_status),
+        include_product_context=scope.get("include_product_context", True),
     )
+    policy_rules = await policy_agent.get_policy_rules(policy_version=policy_version)
 
-    primary_claim_topic = claims[0]["topic"] if claims else "unsupported_claim"
+    has_ship = is_delivery or primary_claim_topic == "unsupported_claim"
+    has_pay = is_payment or is_refund or is_order_status or primary_claim_topic == "unsupported_claim"
+
+    if has_ship:
+        shipment_agent = ShipmentAgent(cgw)
+        ship_res = await shipment_agent.investigate(order_id=resolved_order_id)
+    else:
+        ship_res = {
+            "verdict": "on_time",
+            "late_seller_ids": [],
+            "timeline_complete": True,
+            "shipment_data": {},
+        }
+
+    if has_pay:
+        payment_agent = PaymentAgent(cgw)
+        pay_res = await payment_agent.investigate(order_id=resolved_order_id, claims=claims)
+    else:
+        pay_res = {
+            "verdict": "reconciled",
+            "captured_total_brl": 0.0,
+            "refunded_total_brl": 0.0,
+            "refundable_total_brl": 0.0,
+            "payment_references": [],
+            "payments_data": [],
+            "refund_data": None,
+        }
+
     trace.emit(
         case_id=case_id,
         event_type="policy_decided",

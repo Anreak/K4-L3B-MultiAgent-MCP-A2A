@@ -150,31 +150,29 @@ class OrderAgent:
     async def investigate(
         self,
         order_id: str,
+        include_sellers: bool = True,
         include_product_context: bool = True,
     ) -> dict[str, Any]:
-        tasks = [
-            self.gateway.call("get_order", actor="order-agent", order_id=order_id),
-            self.gateway.call("get_order_items", actor="order-agent", order_id=order_id),
-            self.gateway.call("get_sellers", actor="order-agent", order_id=order_id),
-        ]
-        if include_product_context:
-            tasks.append(
-                self.gateway.call("get_product_context", actor="order-agent", order_id=order_id)
-            )
+        order_res = await self.gateway.call("get_order", actor="order-agent", order_id=order_id)
+        items_res = await self.gateway.call("get_order_items", actor="order-agent", order_id=order_id)
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        order_res = results[0] if len(results) > 0 and not isinstance(results[0], Exception) else {}
-        items_res = results[1] if len(results) > 1 and not isinstance(results[1], Exception) else {}
-        sellers_res = results[2] if len(results) > 2 and not isinstance(results[2], Exception) else {}
-        products_res = (
-            results[3]
-            if include_product_context and len(results) > 3 and not isinstance(results[3], Exception)
-            else {}
-        )
+        sellers_res = {}
+        if include_sellers:
+            try:
+                sellers_res = await self.gateway.call("get_sellers", actor="order-agent", order_id=order_id)
+            except Exception:
+                sellers_res = {}
+
+        products_res = {}
+        if include_product_context:
+            try:
+                products_res = await self.gateway.call("get_product_context", actor="order-agent", order_id=order_id)
+            except Exception:
+                products_res = {}
 
         order_data = order_res.get("data", {})
         items_data = items_res.get("data", [])
-        sellers_data = sellers_res.get("data", [])
+        sellers_data = sellers_res.get("data", []) if include_sellers else []
         products_data = products_res.get("data", []) if include_product_context else []
 
         item_ids = [item["order_item_id"] for item in items_data if "order_item_id" in item]
@@ -267,26 +265,16 @@ class PaymentAgent:
         claim_topics = {c.get("topic") for c in claims}
         has_refund_claim = bool(claim_topics & {"refund_pending", "refund_failed"})
 
-        tasks = [
-            self.gateway.call("get_order_payments", actor="payment-agent", order_id=order_id),
-            self.gateway.call("get_payment_timeline", actor="payment-agent", order_id=order_id),
-        ]
+        timeline_res = await self.gateway.call("get_payment_timeline", actor="payment-agent", order_id=order_id)
+        ref_res = None
         if has_refund_claim:
-            tasks.append(
-                self.gateway.call("get_refund_timeline", actor="payment-agent", order_id=order_id)
-            )
+            try:
+                ref_res = await self.gateway.call("get_refund_timeline", actor="payment-agent", order_id=order_id)
+            except Exception:
+                ref_res = None
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        pay_res = results[0] if len(results) > 0 and not isinstance(results[0], Exception) else {}
-        timeline_res = results[1] if len(results) > 1 and not isinstance(results[1], Exception) else {}
-        ref_res = (
-            results[2]
-            if has_refund_claim and len(results) > 2 and not isinstance(results[2], Exception)
-            else None
-        )
-
-        payments_data = pay_res.get("data", [])
         payment_timeline_data = timeline_res.get("data", {})
+        payments_data = payment_timeline_data.get("payments", [])
         refund_data = ref_res.get("data", {}) if ref_res else None
 
         captured_total = 0.0
